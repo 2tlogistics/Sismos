@@ -4,3 +4,5 @@ pandas>=2.1.4
 matplotlib>=3.8.2
 folium>=0.14.0
 numpy>=1.26.3
+streamlit-folium>=0.15.1
+python-dateutil>=2.8.2
