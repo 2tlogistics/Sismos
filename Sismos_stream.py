@@ -3,21 +3,62 @@ import requests
 import pandas as pd
 import matplotlib.pyplot as plt
 import folium
-from folium.plugins import HeatMap, MarkerCluster
+from folium.plugins import HeatMap, MarkerCluster, Fullscreen
 from datetime import datetime, timedelta
 import json
 from streamlit_folium import st_folium
 
-# Configuración de la página
-st.set_page_config(page_title="Terremotos en Perú", layout="wide")
+# Configuración de la página para mejor responsive
+st.set_page_config(
+    page_title="Terremotos en Perú",
+    layout="wide",
+    initial_sidebar_state="auto"
+)
 
-# Título de la aplicación
+# CSS personalizado para mejorar el responsive
+st.markdown("""
+<style>
+    /* Ajustes generales para móviles */
+    @media screen and (max-width: 768px) {
+        .stSlider > div {
+            width: 100% !important;
+        }
+        .stDataFrame {
+            font-size: 12px !important;
+        }
+        .stMetric {
+            padding: 5px !important;
+        }
+        .css-1v0mbdj {
+            max-width: 100% !important;
+        }
+    }
+    
+    /* Mejorar visualización de tabs en móviles */
+    .stTabs [role="tablist"] {
+        flex-wrap: wrap;
+    }
+    
+    /* Ajustar popups del mapa */
+    .folium-popup {
+        max-width: 250px !important;
+    }
+    
+    /* Sidebar más compacta en móviles */
+    @media screen and (max-width: 768px) {
+        section[data-testid="stSidebar"] {
+            width: 200px !important;
+        }
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# Título de la aplicación responsive
 st.title("🌍 Monitoreo Sísmico del Perú")
 st.markdown("""
-<div style="background-color:#f0f2f6;padding:10px;border-radius:5px;margin-bottom:20px">
-Visualización en tiempo real de actividad sísmica en territorio peruano<br>
-Datos proporcionados por el <a href="https://earthquake.usgs.gov" target="_blank">Servicio Geológico de EE.UU. (USGS)</a><br>
-Desarrollado por <a href="https://digitalinnovation.agency" target="_blank">Digital Innovation Agency</a>
+<div style="background-color:#f0f2f6;padding:10px;border-radius:5px;margin-bottom:10px;font-size:14px">
+Visualización de actividad sísmica | Datos de <a href="https://earthquake.usgs.gov" target="_blank">USGS</a><br>
+<small>Desarrollado por <a href="https://digitalinnovation.agency" target="_blank">Digital Innovation Agency</a></small>
 </div>
 """, unsafe_allow_html=True)
 
@@ -30,21 +71,14 @@ PERU_BOUNDS = {
     'max_longitude': -68.0
 }
 
-# GeoJSON simplificado de departamentos del Perú
-DEPARTAMENTOS_GEOJSON = {
-    "type": "FeatureCollection",
-    "features": [
-        {
-            "type": "Feature",
-            "properties": {"NOMBDEP": "Lima"},
-            "geometry": {
-                "type": "Polygon",
-                "coordinates": [[[-77.2, -12.0], [-76.0, -12.0], [-76.0, -11.0], [-77.2, -11.0], [-77.2, -12.0]]]
-            }
-        }
-        # Agregar más departamentos aquí o cargar desde un archivo GeoJSON
-    ]
-}
+# Cargar GeoJSON de departamentos (simplificado para el ejemplo)
+try:
+    DEPARTAMENTOS_GEOJSON = json.load(open('departamentos.geojson'))
+except:
+    DEPARTAMENTOS_GEOJSON = {
+        "type": "FeatureCollection",
+        "features": []
+    }
 
 @st.cache_data(ttl=3600)
 def obtener_terremotos(dias_atras=30, magnitud_minima=4.0):
@@ -91,211 +125,246 @@ def obtener_terremotos(dias_atras=30, magnitud_minima=4.0):
         st.error(f"Error al conectarse a la API: {e}")
         return None
 
-def crear_mapa_detallado(df):
-    """Crea un mapa interactivo con límites departamentales"""
+def crear_mapa_responsive(df):
+    """Crea un mapa interactivo responsive"""
+    # Mapa base centrado en Perú
     mapa = folium.Map(
         location=[-9.19, -75.01],
         zoom_start=5,
-        control_scale=True
+        control_scale=True,
+        tiles='cartodbpositron'
     )
     
-    # Capas base
-    folium.TileLayer(
-        'openstreetmap',
-        name='Mapa de Calles',
-        attr='OpenStreetMap contributors'
+    # Añadir controles de pantalla completa
+    Fullscreen(
+        position='topright',
+        title='Pantalla completa',
+        title_cancel='Salir de pantalla completa',
+        force_separate_button=True
     ).add_to(mapa)
     
-    folium.TileLayer(
-        'cartodbpositron',
-        name='Mapa Ligero',
-        attr='CartoDB'
-    ).add_to(mapa)
-    
-    folium.TileLayer(
-        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-        name='Imagen Satelital',
-        attr='Esri World Imagery'
-    ).add_to(mapa)
-    
-    # Límites departamentales
-    try:
+    # Capa de departamentos
+    if DEPARTAMENTOS_GEOJSON['features']:
         folium.GeoJson(
             DEPARTAMENTOS_GEOJSON,
             name="Departamentos",
             style_function=lambda x: {
                 'fillColor': '#ffff00',
                 'color': '#000000',
-                'weight': 1.5,
+                'weight': 1,
                 'fillOpacity': 0.1
             },
             tooltip=folium.features.GeoJsonTooltip(
                 fields=['NOMBDEP'],
                 aliases=['Departamento:'],
                 localize=True,
-                style=("font-weight: bold;")
+                style=("font-size: 12px;")
             )
         ).add_to(mapa)
-    except Exception as e:
-        st.warning(f"No se pudieron cargar los límites departamentales: {str(e)}")
     
-    # Marcadores de terremotos
+    # Agrupar marcadores para mejor rendimiento en móviles
     marker_cluster = MarkerCluster(
         name="Terremotos",
-        overlay=True,
-        control=True
+        options={
+            'maxClusterRadius': 40,
+            'spiderfyOnMaxZoom': True,
+            'showCoverageOnHover': False,
+            'zoomToBoundsOnClick': True
+        }
     ).add_to(mapa)
     
+    # Añadir marcadores responsivos
     for idx, row in df.iterrows():
-        color = 'red' if row['magnitud'] >= 6.0 else 'orange' if row['magnitud'] >= 5.0 else 'lightblue'
-        icono = 'flash' if row['magnitud'] >= 6.0 else 'alert' if row['magnitud'] >= 5.0 else 'info-sign'
+        color = 'red' if row['magnitud'] >= 6.0 else 'orange' if row['magnitud'] >= 5.0 else 'blue'
+        icon_size = max(5, min(20, row['magnitud'] * 2))  # Tamaño responsivo
         
-        popup_content = f"""
-        <div style="width:250px;font-family:Arial">
-            <h4 style="color:{color};margin-bottom:5px">Terremoto {row['magnitud']:.1f} M</h4>
-            <p><b>Fecha:</b> {row['fecha'].strftime('%Y-%m-%d %H:%M')}</p>
-            <p><b>Ubicación:</b> {row['lugar']}</p>
-            <p><b>Coordenadas:</b> {row['latitud']:.3f}, {row['longitud']:.3f}</p>
-        </div>
-        """
-        
-        folium.Marker(
+        folium.CircleMarker(
             location=[row['latitud'], row['longitud']],
-            popup=folium.Popup(popup_content, max_width=300),
-            icon=folium.Icon(
-                color=color,
-                icon=icono,
-                prefix='glyphicon'
+            radius=icon_size,
+            popup=folium.Popup(
+                f"""
+                <div style="font-size:12px">
+                    <b>Magnitud:</b> {row['magnitud']:.1f}<br>
+                    <b>Fecha:</b> {row['fecha'].strftime('%d/%m/%Y %H:%M')}<br>
+                    <b>Lugar:</b> {row['lugar']}
+                </div>
+                """,
+                max_width=250
             ),
-            tooltip=f"Terremoto {row['magnitud']:.1f} M"
+            color=color,
+            fill=True,
+            fill_color=color,
+            fill_opacity=0.7,
+            weight=1
         ).add_to(marker_cluster)
     
-    # Mapa de calor
+    # Mapa de calor responsivo
     HeatMap(
         data=df[['latitud', 'longitud', 'magnitud']].values.tolist(),
         name="Mapa de Calor",
-        radius=20,
-        blur=15,
-        gradient={0.2: 'blue', 0.4: 'lime', 0.6: 'yellow', 1: 'red'}
+        radius=15,
+        blur=10,
+        min_opacity=0.5,
+        gradient={0.2: 'blue', 0.5: 'lime', 0.8: 'red'}
     ).add_to(mapa)
     
-    # Controles
+    # Control de capas responsivo
     folium.LayerControl(
-        position='topright',
-        collapsed=False
+        position='bottomright',
+        collapsed=True
     ).add_to(mapa)
-    
-    folium.plugins.MiniMap().add_to(mapa)
     
     return mapa
 
-def mostrar_graficos(df):
-    """Muestra gráficos analíticos"""
-    st.subheader("📈 Análisis de Datos Sísmicos")
+def mostrar_graficos_responsive(df):
+    """Muestra gráficos adaptados a móviles"""
+    st.subheader("📊 Análisis de Datos")
     
-    col1, col2 = st.columns(2)
+    # Gráficos en tabs para mejor organización en móviles
+    tab1, tab2, tab3 = st.tabs(["Magnitudes", "Profundidad", "Temporal"])
     
-    with col1:
-        st.markdown("**Distribución de Magnitudes**")
-        fig, ax = plt.subplots(figsize=(8, 4))
-        ax.hist(df['magnitud'], bins=15, color='#ff7f0e', edgecolor='black')
-        ax.set_xlabel('Magnitud')
-        ax.set_ylabel('Frecuencia')
+    with tab1:
+        fig, ax = plt.subplots(figsize=(6, 3))
+        ax.hist(df['magnitud'], bins=12, color='#ff7f0e', edgecolor='white')
+        ax.set_xlabel('Magnitud', fontsize=10)
+        ax.set_ylabel('Frecuencia', fontsize=10)
         ax.grid(True, alpha=0.3)
-        st.pyplot(fig)
+        ax.tick_params(labelsize=8)
+        st.pyplot(fig, use_container_width=True)
     
-    with col2:
-        st.markdown("**Magnitud vs. Profundidad**")
-        fig, ax = plt.subplots(figsize=(8, 4))
-        scatter = ax.scatter(
+    with tab2:
+        fig, ax = plt.subplots(figsize=(6, 3))
+        ax.scatter(
             df['magnitud'],
             df.get('profundidad', 10),
             c=df['magnitud'],
             cmap='viridis',
+            s=30,
             alpha=0.6
         )
-        plt.colorbar(scatter, label='Magnitud')
-        ax.set_xlabel('Magnitud')
-        ax.set_ylabel('Profundidad (km)')
+        ax.set_xlabel('Magnitud', fontsize=10)
+        ax.set_ylabel('Profundidad (km)', fontsize=10)
         ax.grid(True, alpha=0.3)
-        st.pyplot(fig)
+        ax.tick_params(labelsize=8)
+        st.pyplot(fig, use_container_width=True)
     
-    st.markdown("**Evolución Temporal**")
-    fig, ax = plt.subplots(figsize=(10, 4))
-    ax.plot(df['fecha'], df['magnitud'], 'o-', markersize=5, alpha=0.7)
-    ax.set_xlabel('Fecha')
-    ax.set_ylabel('Magnitud')
-    ax.grid(True)
-    plt.xticks(rotation=45)
-    st.pyplot(fig)
+    with tab3:
+        fig, ax = plt.subplots(figsize=(8, 3))
+        ax.plot(df['fecha'], df['magnitud'], 'o', markersize=4, alpha=0.7)
+        ax.set_xlabel('Fecha', fontsize=10)
+        ax.set_ylabel('Magnitud', fontsize=10)
+        ax.grid(True, alpha=0.3)
+        ax.tick_params(labelsize=8)
+        plt.xticks(rotation=45)
+        st.pyplot(fig, use_container_width=True)
 
-# Sidebar con controles
+# Sidebar responsiva
 with st.sidebar:
-    st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/c/cf/Mapa_del_Per%C3%BA_-_Departamentos.png/320px-Mapa_del_Per%C3%BA_-_Departamentos.png", 
-             use_container_width=True)  # Corregido: use_container_width en lugar de use_column_width
+    st.markdown("""
+    <div style="text-align:center">
+        <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/c/cf/Mapa_del_Per%C3%BA_-_Departamentos.png/320px-Mapa_del_Per%C3%BA_-_Departamentos.png" 
+             style="width:100%;max-width:200px;margin:0 auto">
+    </div>
+    """, unsafe_allow_html=True)
     
     st.header("⚙️ Configuración")
     
     dias_atras = st.slider(
-        "Período de análisis (días)",
-        1, 365, 30
+        "Días a analizar",
+        1, 365, 30,
+        help="Seleccione el período de tiempo a revisar"
     )
     
     magnitud_minima = st.slider(
         "Magnitud mínima",
-        2.0, 8.0, 4.0, 0.1
+        2.0, 8.0, 4.0, 0.1,
+        help="Filtre los terremotos por magnitud"
     )
     
     st.markdown("---")
-    st.markdown("**📊 Estadísticas Rápidas**")
+    st.markdown("**📈 Datos Rápidos**")
+    
     if 'df' in locals():
-        st.metric("Terremotos registrados", len(df))
-        st.metric("Magnitud máxima", f"{df['magnitud'].max():.1f}")
+        cols = st.columns(2)
+        cols[0].metric("Eventos", len(df))
+        cols[1].metric("Máxima", f"{df['magnitud'].max():.1f}")
     
     st.markdown("---")
     st.markdown("""
-    **ℹ️ Información**  
-    Desarrollado por [Digital Innovation Agency](https://digitalinnovation.agency)  
-    Datos del Servicio Geológico de EE.UU.
-    """)
+    <div style="font-size:12px">
+    <b>ℹ️ Información</b><br>
+    Aplicación desarrollada por<br>
+    <a href="https://digitalinnovation.agency" target="_blank">Digital Innovation Agency</a>
+    </div>
+    """, unsafe_allow_html=True)
 
 # Obtener datos
 df = obtener_terremotos(dias_atras, magnitud_minima)
 
 if df is not None and not df.empty:
-    # Mostrar métricas
-    st.subheader("🔍 Resumen de Actividad Sísmica")
-    
+    # Mostrar métricas responsivas
     cols = st.columns(4)
-    cols[0].metric("Total de eventos", len(df))
-    cols[1].metric("Magnitud máxima", f"{df['magnitud'].max():.1f}")
-    cols[2].metric("Magnitud promedio", f"{df['magnitud'].mean():.1f}")
-    cols[3].metric("Último evento", df['fecha'].max().strftime('%d/%m/%Y %H:%M'))
+    metrics = [
+        ("Eventos", len(df)),
+        ("Máxima", f"{df['magnitud'].max():.1f}"),
+        ("Promedio", f"{df['magnitud'].mean():.1f}"),
+        ("Último", df['fecha'].max().strftime('%d/%m'))
+    ]
     
-    # Pestañas
-    tab1, tab2 = st.tabs(["🗺️ Mapa Interactivo", "📊 Análisis"])
+    for i, (title, value) in enumerate(metrics):
+        cols[i].metric(title, value)
     
-    with tab1:
+    # Contenido principal en tabs
+    tab_mapa, tab_datos = st.tabs(["🗺 Mapa Interactivo", "📋 Datos Completos"])
+    
+    with tab_mapa:
         st.markdown("""
-        <div style="background-color:#f8f9fa;padding:10px;border-radius:5px;margin-bottom:20px">
-        <b>Instrucciones:</b> Use los controles en la esquina superior derecha para cambiar la visualización.
+        <div style="font-size:12px;background-color:#f8f9fa;padding:8px;border-radius:5px;margin-bottom:10px">
+        <b>🔍 Toque los marcadores para más detalles. Use dos dedos para hacer zoom.</b>
         </div>
         """, unsafe_allow_html=True)
         
-        mapa = crear_mapa_detallado(df)
-        st_folium(mapa, width=1200, height=700, returned_objects=[])
+        mapa = crear_mapa_responsive(df)
+        st_folium(
+            mapa,
+            width=700 if st.session_state.get('IS_MOBILE', False) else 1000,
+            height=400 if st.session_state.get('IS_MOBILE', False) else 600,
+            returned_objects=[]
+        )
     
-    with tab2:
-        mostrar_graficos(df)
-        st.subheader("📋 Datos Completos")
+    with tab_datos:
+        mostrar_graficos_responsive(df)
         st.dataframe(
             df.sort_values('fecha', ascending=False),
-            use_container_width=True  # Corregido: use_container_width en lugar de use_column_width
+            column_config={
+                "fecha": "Fecha/Hora",
+                "magnitud": st.column_config.NumberColumn(format="%.1f"),
+                "lugar": "Ubicación"
+            },
+            hide_index=True,
+            use_container_width=True
         )
 
-# Pie de página
+# Pie de página responsivo
 st.markdown("---")
-st.caption(f"""
-Datos proporcionados por el Servicio Geológico de los Estados Unidos (USGS).  
-Desarrollado por [Digital Innovation Agency](https://digitalinnovation.agency) - Actualizado: {datetime.now().strftime('%d/%m/%Y %H:%M')}
-""")
+st.markdown("""
+<div style="font-size:12px;text-align:center">
+Datos de <a href="https://earthquake.usgs.gov" target="_blank">USGS</a> | 
+Actualizado: {date} | 
+Desarrollado por <a href="https://digitalinnovation.agency" target="_blank">Digital Innovation Agency</a>
+</div>
+""".format(date=datetime.now().strftime('%d/%m/%Y %H:%M')), unsafe_allow_html=True)
+
+# Detección de móvil (simplificada)
+st.markdown("""
+<script>
+    function checkMobile() {
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        if (isMobile) {
+            window.parent.postMessage({type: 'setIsMobile', value: true}, '*');
+        }
+    }
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+</script>
+""", unsafe_allow_html=True)
