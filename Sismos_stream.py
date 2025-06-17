@@ -8,9 +8,19 @@ from datetime import datetime, timedelta
 import json
 from streamlit_folium import st_folium
 import numpy as np
-import plotly.express as px
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+
+# Manejo robusto de Plotly
+try:
+    import plotly.express as px
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+    PLOTLY_AVAILABLE = True
+except ImportError:
+    PLOTLY_AVAILABLE = False
+    st.warning("""
+    ⚠️ Plotly no está instalado. Algunas visualizaciones avanzadas estarán limitadas.
+    Para activar todas las funciones, instale Plotly con: `pip install plotly`
+    """)
 
 # Configuración de la página
 st.set_page_config(
@@ -23,61 +33,43 @@ st.set_page_config(
 # CSS personalizado mejorado
 st.markdown("""
 <style>
-    /* Ajustes generales */
     .main .block-container {
         padding-top: 2rem;
         padding-bottom: 2rem;
     }
-    
-    /* Mejorar visualización de tabs */
     .stTabs [role="tablist"] {
         flex-wrap: wrap;
     }
-    
     .stTabs [role="tab"] {
         padding: 0.5rem 1rem;
         font-size: 0.9rem;
     }
-    
-    /* Ajustar popups del mapa */
     .folium-popup {
         max-width: 300px !important;
         font-size: 12px !important;
     }
-    
-    /* Sidebar más compacta */
     section[data-testid="stSidebar"] {
         width: 280px !important;
     }
-    
-    /* Gráficos responsive */
     .stPlotlyChart, .stDataFrame {
         width: 100% !important;
     }
-    
-    /* Tarjetas de métricas */
     .stMetric {
         border-left: 4px solid #4e79a7;
         padding-left: 0.5rem;
     }
-    
-    /* Ajustes para móviles */
     @media screen and (max-width: 768px) {
         .stMetric {
             padding: 5px !important;
             margin-bottom: 10px !important;
         }
-        
         section[data-testid="stSidebar"] {
             width: 200px !important;
         }
-        
         .stSlider > div {
             width: 100% !important;
         }
     }
-    
-    /* Estilo para el footer */
     .footer {
         font-size: 0.8rem;
         text-align: center;
@@ -123,26 +115,20 @@ COUNTRY_BOUNDS = {
     }
 }
 
-# Cargar GeoJSON de regiones (simplificado para el ejemplo)
-try:
-    DEPARTAMENTOS_GEOJSON = json.load(open('departamentos.geojson'))
-except:
-    DEPARTAMENTOS_GEOJSON = {
-        "type": "FeatureCollection",
-        "features": []
-    }
+# GeoJSON simulado para regiones
+DEPARTAMENTOS_GEOJSON = {
+    "type": "FeatureCollection",
+    "features": []
+}
 
-try:
-    ESTADOS_VENEZUELA_GEOJSON = json.load(open('estados_venezuela.geojson'))
-except:
-    ESTADOS_VENEZUELA_GEOJSON = {
-        "type": "FeatureCollection",
-        "features": []
-    }
+ESTADOS_VENEZUELA_GEOJSON = {
+    "type": "FeatureCollection",
+    "features": []
+}
 
 @st.cache_data(ttl=3600)
 def obtener_terremotos(dias_atras=30, magnitud_minima=4.0, pais='Perú'):
-    """Obtiene datos de terremotos desde la API de USGS para el país seleccionado"""
+    """Obtiene datos de terremotos desde la API de USGS"""
     fecha_fin = datetime.now()
     fecha_inicio = fecha_fin - timedelta(days=dias_atras)
     
@@ -339,12 +325,44 @@ def crear_mapa_completo(df, pais_seleccionado):
     
     return mapa
 
+def crear_graficos_basicos(df):
+    """Versión básica de gráficos con matplotlib"""
+    st.subheader("📊 Análisis Básico (Matplotlib)")
+    
+    tab1, tab2, tab3 = st.tabs(["Magnitudes", "Profundidad", "Temporal"])
+    
+    with tab1:
+        fig, ax = plt.subplots(figsize=(8, 4))
+        df['magnitud'].hist(ax=ax, bins=15, color='skyblue')
+        ax.set_title('Distribución de Magnitudes')
+        ax.set_xlabel('Magnitud')
+        ax.set_ylabel('Frecuencia')
+        st.pyplot(fig)
+    
+    with tab2:
+        fig, ax = plt.subplots(figsize=(8, 4))
+        ax.scatter(df['magnitud'], df['profundidad'], alpha=0.6)
+        ax.set_title('Magnitud vs Profundidad')
+        ax.set_xlabel('Magnitud')
+        ax.set_ylabel('Profundidad (km)')
+        st.pyplot(fig)
+    
+    with tab3:
+        fig, ax = plt.subplots(figsize=(10, 4))
+        df.set_index('fecha')['magnitud'].plot(ax=ax, style='o', markersize=4)
+        ax.set_title('Sismos a lo largo del tiempo')
+        ax.set_ylabel('Magnitud')
+        plt.xticks(rotation=45)
+        st.pyplot(fig)
+
 def crear_graficos_avanzados(df):
     """Crea gráficos interactivos con Plotly"""
-    st.subheader("📊 Análisis Estadístico Avanzado")
+    if not PLOTLY_AVAILABLE:
+        return crear_graficos_basicos(df)
     
-    # Gráficos en tabs
-    tab1, tab2, tab3, tab4 = st.tabs(["Distribuciones", "Relaciones", "Temporal", "Comparación por País"])
+    st.subheader("📊 Análisis Avanzado (Plotly)")
+    
+    tab1, tab2, tab3 = st.tabs(["Distribuciones", "Relaciones", "Temporal"])
     
     with tab1:
         # Histograma de magnitudes con distribución de países
@@ -386,18 +404,6 @@ def crear_graficos_avanzados(df):
             trendline='lowess'
         )
         st.plotly_chart(fig, use_container_width=True)
-        
-        # Gráfico de violín para magnitud por país
-        fig2 = px.violin(
-            df,
-            y='magnitud',
-            x='pais',
-            color='pais',
-            box=True,
-            points='all',
-            title='Distribución de Magnitudes por País'
-        )
-        st.plotly_chart(fig2, use_container_width=True)
     
     with tab3:
         # Serie temporal de sismos
@@ -414,74 +420,6 @@ def crear_graficos_avanzados(df):
             markers=True
         )
         fig.update_xaxes(rangeslider_visible=True)
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Heatmap temporal
-        df['hora'] = df['fecha'].dt.hour
-        hour_counts = df.groupby(['hora', 'pais']).size().reset_index(name='counts')
-        
-        fig2 = px.density_heatmap(
-            df,
-            x=df['fecha'].dt.hour,
-            y=df['fecha'].dt.day,
-            z='magnitud',
-            facet_col='pais',
-            title='Distribución de Sismos por Hora y Día',
-            labels={'x': 'Hora del día', 'y': 'Día del mes', 'z': 'Magnitud'},
-            nbinsx=24,
-            nbinsy=31
-        )
-        st.plotly_chart(fig2, use_container_width=True)
-    
-    with tab4:
-        # Comparación estadística entre países
-        st.subheader("Estadísticas Comparativas")
-        
-        stats = df.groupby('pais').agg({
-            'magnitud': ['mean', 'max', 'min', 'std'],
-            'profundidad': ['mean', 'max', 'min', 'std'],
-            'significancia': ['mean', 'max'],
-            'tsunami': 'sum'
-        }).reset_index()
-        
-        st.dataframe(
-            stats.style.format({
-                ('magnitud', 'mean'): '{:.2f}',
-                ('magnitud', 'std'): '{:.2f}',
-                ('profundidad', 'mean'): '{:.2f}',
-                ('profundidad', 'std'): '{:.2f}',
-                ('significancia', 'mean'): '{:.2f}'
-            }),
-            use_container_width=True
-        )
-        
-        # Gráfico de radar para comparación
-        fig = go.Figure()
-        
-        for pais in df['pais'].unique():
-            df_pais = df[df['pais'] == pais]
-            fig.add_trace(go.Scatterpolar(
-                r=[
-                    df_pais['magnitud'].mean(),
-                    df_pais['profundidad'].mean(),
-                    df_pais['significancia'].mean(),
-                    df_pais['tsunami'].sum()
-                ],
-                theta=['Magnitud', 'Profundidad', 'Significancia', 'Tsunamis'],
-                fill='toself',
-                name=pais
-            ))
-        
-        fig.update_layout(
-            polar=dict(
-                radialaxis=dict(
-                    visible=True,
-                    range=[0, max(df['magnitud'].max(), df['profundidad'].max()/10, df['significancia'].max()/100)]
-                )),
-            showlegend=True,
-            title='Comparación de Estadísticas por País'
-        )
-        
         st.plotly_chart(fig, use_container_width=True)
 
 # Sidebar mejorada
@@ -620,7 +558,10 @@ if df is not None and not df.empty:
         )
     
     with tab_graficos:
-        crear_graficos_avanzados(df)
+        if PLOTLY_AVAILABLE:
+            crear_graficos_avanzados(df)
+        else:
+            crear_graficos_basicos(df)
     
     with tab_datos:
         st.dataframe(
