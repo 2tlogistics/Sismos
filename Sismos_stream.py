@@ -16,7 +16,8 @@ st.title("🌍 Monitoreo Sísmico del Perú")
 st.markdown("""
 <div style="background-color:#f0f2f6;padding:10px;border-radius:5px;margin-bottom:20px">
 Visualización en tiempo real de actividad sísmica en territorio peruano<br>
-Datos proporcionados por el <a href="https://earthquake.usgs.gov" target="_blank">Servicio Geológico de EE.UU. (USGS)</a>
+Datos proporcionados por el <a href="https://earthquake.usgs.gov" target="_blank">Servicio Geológico de EE.UU. (USGS)</a><br>
+Desarrollado por <a href="https://digitalinnovation.agency" target="_blank">Digital Innovation Agency</a>
 </div>
 """, unsafe_allow_html=True)
 
@@ -29,7 +30,7 @@ PERU_BOUNDS = {
     'max_longitude': -68.0
 }
 
-# GeoJSON simplificado de departamentos del Perú (debes reemplazarlo con un archivo completo)
+# GeoJSON simplificado de departamentos del Perú
 DEPARTAMENTOS_GEOJSON = {
     "type": "FeatureCollection",
     "features": [
@@ -45,7 +46,7 @@ DEPARTAMENTOS_GEOJSON = {
     ]
 }
 
-@st.cache_data(ttl=3600)  # Cachear datos por 1 hora
+@st.cache_data(ttl=3600)
 def obtener_terremotos(dias_atras=30, magnitud_minima=4.0):
     """Obtiene datos de terremotos en Perú desde la API de USGS"""
     fecha_fin = datetime.now()
@@ -71,7 +72,6 @@ def obtener_terremotos(dias_atras=30, magnitud_minima=4.0):
             st.warning("No se encontraron terremotos con los criterios especificados.")
             return None
         
-        # Procesar los datos
         terremotos = []
         for evento in datos['features']:
             prop = evento['properties']
@@ -92,15 +92,14 @@ def obtener_terremotos(dias_atras=30, magnitud_minima=4.0):
         return None
 
 def crear_mapa_detallado(df):
-    """Crea un mapa interactivo con límites departamentales y terremotos"""
-    # Crear mapa base con dos tipos de visualización
+    """Crea un mapa interactivo con límites departamentales"""
     mapa = folium.Map(
         location=[-9.19, -75.01],
         zoom_start=5,
         control_scale=True
     )
     
-    # Añadir diferentes capas base
+    # Capas base
     folium.TileLayer(
         'openstreetmap',
         name='Mapa de Calles',
@@ -119,7 +118,7 @@ def crear_mapa_detallado(df):
         attr='Esri World Imagery'
     ).add_to(mapa)
     
-    # Cargar y añadir límites departamentales
+    # Límites departamentales
     try:
         folium.GeoJson(
             DEPARTAMENTOS_GEOJSON,
@@ -140,38 +139,26 @@ def crear_mapa_detallado(df):
     except Exception as e:
         st.warning(f"No se pudieron cargar los límites departamentales: {str(e)}")
     
-    # Agrupar marcadores para mejor visualización
+    # Marcadores de terremotos
     marker_cluster = MarkerCluster(
         name="Terremotos",
         overlay=True,
         control=True
     ).add_to(mapa)
     
-    # Añadir marcadores para cada terremoto
     for idx, row in df.iterrows():
-        # Determinar color según magnitud
-        if row['magnitud'] >= 6.0:
-            color = 'red'
-            icono = 'flash'
-        elif row['magnitud'] >= 5.0:
-            color = 'orange'
-            icono = 'alert'
-        else:
-            color = 'lightblue'
-            icono = 'info-sign'
+        color = 'red' if row['magnitud'] >= 6.0 else 'orange' if row['magnitud'] >= 5.0 else 'lightblue'
+        icono = 'flash' if row['magnitud'] >= 6.0 else 'alert' if row['magnitud'] >= 5.0 else 'info-sign'
         
-        # Crear contenido del popup
         popup_content = f"""
         <div style="width:250px;font-family:Arial">
             <h4 style="color:{color};margin-bottom:5px">Terremoto {row['magnitud']:.1f} M</h4>
             <p><b>Fecha:</b> {row['fecha'].strftime('%Y-%m-%d %H:%M')}</p>
             <p><b>Ubicación:</b> {row['lugar']}</p>
             <p><b>Coordenadas:</b> {row['latitud']:.3f}, {row['longitud']:.3f}</p>
-            <p><b>Profundidad:</b> {row.get('profundidad', 'N/A')} km</p>
         </div>
         """
         
-        # Añadir marcador al cluster
         folium.Marker(
             location=[row['latitud'], row['longitud']],
             popup=folium.Popup(popup_content, max_width=300),
@@ -183,7 +170,7 @@ def crear_mapa_detallado(df):
             tooltip=f"Terremoto {row['magnitud']:.1f} M"
         ).add_to(marker_cluster)
     
-    # Añadir mapa de calor
+    # Mapa de calor
     HeatMap(
         data=df[['latitud', 'longitud', 'magnitud']].values.tolist(),
         name="Mapa de Calor",
@@ -192,29 +179,18 @@ def crear_mapa_detallado(df):
         gradient={0.2: 'blue', 0.4: 'lime', 0.6: 'yellow', 1: 'red'}
     ).add_to(mapa)
     
-    # Añadir control de capas
+    # Controles
     folium.LayerControl(
         position='topright',
         collapsed=False
     ).add_to(mapa)
     
-    # Añadir mini mapa de referencia
-    minimap = folium.plugins.MiniMap()
-    mapa.add_child(minimap)
-    
-    # Añadir control de escala
-    folium.plugins.FloatImage(
-        'https://upload.wikimedia.org/wikipedia/commons/thumb/5/56/Peru_location_map.svg/1200px-Peru_location_map.svg.png',
-        bottom=5,
-        left=5,
-        width="150px",
-        height="150px"
-    ).add_to(mapa)
+    folium.plugins.MiniMap().add_to(mapa)
     
     return mapa
 
 def mostrar_graficos(df):
-    """Muestra gráficos analíticos de los datos"""
+    """Muestra gráficos analíticos"""
     st.subheader("📈 Análisis de Datos Sísmicos")
     
     col1, col2 = st.columns(2)
@@ -256,19 +232,18 @@ def mostrar_graficos(df):
 # Sidebar con controles
 with st.sidebar:
     st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/c/cf/Mapa_del_Per%C3%BA_-_Departamentos.png/320px-Mapa_del_Per%C3%BA_-_Departamentos.png", 
-             use_column_width=True)
+             use_container_width=True)  # Corregido: use_container_width en lugar de use_column_width
+    
     st.header("⚙️ Configuración")
     
     dias_atras = st.slider(
         "Período de análisis (días)",
-        1, 365, 30,
-        help="Seleccione cuántos días hacia atrás desea analizar"
+        1, 365, 30
     )
     
     magnitud_minima = st.slider(
         "Magnitud mínima",
-        2.0, 8.0, 4.0, 0.1,
-        help="Filtre terremotos por magnitud mínima"
+        2.0, 8.0, 4.0, 0.1
     )
     
     st.markdown("---")
@@ -276,20 +251,19 @@ with st.sidebar:
     if 'df' in locals():
         st.metric("Terremotos registrados", len(df))
         st.metric("Magnitud máxima", f"{df['magnitud'].max():.1f}")
-        st.metric("Último evento", df['fecha'].max().strftime('%d/%m/%Y %H:%M'))
     
     st.markdown("---")
     st.markdown("""
     **ℹ️ Información**  
-    Esta aplicación muestra datos sísmicos en tiempo real del Servicio Geológico de EE.UU.  
-    Los círculos en el mapa representan terremotos, con tamaño proporcional a su magnitud.
+    Desarrollado por [Digital Innovation Agency](https://digitalinnovation.agency)  
+    Datos del Servicio Geológico de EE.UU.
     """)
 
 # Obtener datos
 df = obtener_terremotos(dias_atras, magnitud_minima)
 
 if df is not None and not df.empty:
-    # Mostrar métricas principales
+    # Mostrar métricas
     st.subheader("🔍 Resumen de Actividad Sísmica")
     
     cols = st.columns(4)
@@ -298,14 +272,13 @@ if df is not None and not df.empty:
     cols[2].metric("Magnitud promedio", f"{df['magnitud'].mean():.1f}")
     cols[3].metric("Último evento", df['fecha'].max().strftime('%d/%m/%Y %H:%M'))
     
-    # Mostrar mapa y gráficos en pestañas
+    # Pestañas
     tab1, tab2 = st.tabs(["🗺️ Mapa Interactivo", "📊 Análisis"])
     
     with tab1:
         st.markdown("""
         <div style="background-color:#f8f9fa;padding:10px;border-radius:5px;margin-bottom:20px">
-        <b>Instrucciones:</b> Use los controles en la esquina superior derecha para cambiar la capa base, 
-        activar/desactivar el mapa de calor o la agrupación de marcadores.
+        <b>Instrucciones:</b> Use los controles en la esquina superior derecha para cambiar la visualización.
         </div>
         """, unsafe_allow_html=True)
         
@@ -316,22 +289,13 @@ if df is not None and not df.empty:
         mostrar_graficos(df)
         st.subheader("📋 Datos Completos")
         st.dataframe(
-            df.sort_values('fecha', ascending=False).reset_index(drop=True),
-            column_config={
-                "fecha": st.column_config.DatetimeColumn("Fecha/Hora"),
-                "magnitud": st.column_config.NumberColumn("Magnitud", format="%.1f"),
-                "latitud": st.column_config.NumberColumn("Latitud", format="%.3f"),
-                "longitud": st.column_config.NumberColumn("Longitud", format="%.3f")
-            },
-            height=400,
-            use_container_width=True
+            df.sort_values('fecha', ascending=False),
+            use_container_width=True  # Corregido: use_container_width en lugar de use_column_width
         )
-else:
-    st.warning("No se encontraron datos sísmicos con los criterios especificados.")
 
-# Notas al pie
+# Pie de página
 st.markdown("---")
-st.caption("""
-*Datos proporcionados por el Servicio Geológico de los Estados Unidos (USGS).  
-Actualizado automáticamente cada hora. Última actualización: {}
-""".format(datetime.now().strftime('%d/%m/%Y %H:%M')))
+st.caption(f"""
+Datos proporcionados por el Servicio Geológico de los Estados Unidos (USGS).  
+Desarrollado por [Digital Innovation Agency](https://digitalinnovation.agency) - Actualizado: {datetime.now().strftime('%d/%m/%Y %H:%M')}
+""")
