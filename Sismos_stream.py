@@ -9,19 +9,6 @@ import json
 from streamlit_folium import st_folium
 import numpy as np
 
-# Manejo robusto de Plotly
-try:
-    import plotly.express as px
-    import plotly.graph_objects as go
-    from plotly.subplots import make_subplots
-    PLOTLY_AVAILABLE = True
-except ImportError:
-    PLOTLY_AVAILABLE = False
-    st.warning("""
-    ⚠️ Plotly no está instalado. Algunas visualizaciones avanzadas estarán limitadas.
-    Para activar todas las funciones, instale Plotly con: `pip install plotly`
-    """)
-
 # Configuración de la página
 st.set_page_config(
     page_title="Monitoreo Sísmico Perú-Venezuela",
@@ -51,7 +38,7 @@ st.markdown("""
     section[data-testid="stSidebar"] {
         width: 280px !important;
     }
-    .stPlotlyChart, .stDataFrame {
+    .stDataFrame {
         width: 100% !important;
     }
     .stMetric {
@@ -325,102 +312,62 @@ def crear_mapa_completo(df, pais_seleccionado):
     
     return mapa
 
-def crear_graficos_basicos(df):
-    """Versión básica de gráficos con matplotlib"""
-    st.subheader("📊 Análisis Básico (Matplotlib)")
-    
-    tab1, tab2, tab3 = st.tabs(["Magnitudes", "Profundidad", "Temporal"])
-    
-    with tab1:
-        fig, ax = plt.subplots(figsize=(8, 4))
-        df['magnitud'].hist(ax=ax, bins=15, color='skyblue')
-        ax.set_title('Distribución de Magnitudes')
-        ax.set_xlabel('Magnitud')
-        ax.set_ylabel('Frecuencia')
-        st.pyplot(fig)
-    
-    with tab2:
-        fig, ax = plt.subplots(figsize=(8, 4))
-        ax.scatter(df['magnitud'], df['profundidad'], alpha=0.6)
-        ax.set_title('Magnitud vs Profundidad')
-        ax.set_xlabel('Magnitud')
-        ax.set_ylabel('Profundidad (km)')
-        st.pyplot(fig)
-    
-    with tab3:
-        fig, ax = plt.subplots(figsize=(10, 4))
-        df.set_index('fecha')['magnitud'].plot(ax=ax, style='o', markersize=4)
-        ax.set_title('Sismos a lo largo del tiempo')
-        ax.set_ylabel('Magnitud')
-        plt.xticks(rotation=45)
-        st.pyplot(fig)
-
 def crear_graficos_avanzados(df):
-    """Crea gráficos interactivos con Plotly"""
-    if not PLOTLY_AVAILABLE:
-        return crear_graficos_basicos(df)
-    
-    st.subheader("📊 Análisis Avanzado (Plotly)")
+    """Crea gráficos con Matplotlib"""
+    st.subheader("📊 Análisis Avanzado (Matplotlib)")
     
     tab1, tab2, tab3 = st.tabs(["Distribuciones", "Relaciones", "Temporal"])
     
     with tab1:
-        # Histograma de magnitudes con distribución de países
-        fig = px.histogram(
-            df, 
-            x='magnitud', 
-            color='pais', 
-            nbins=20,
-            title='Distribución de Magnitudes por País',
-            labels={'magnitud': 'Magnitud', 'count': 'Número de Sismos'},
-            marginal='box',
-            barmode='overlay',
-            opacity=0.7
-        )
-        fig.update_layout(bargap=0.1)
-        st.plotly_chart(fig, use_container_width=True)
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
         
-        # Gráfico de profundidad
-        fig2 = px.box(
-            df, 
-            y='profundidad', 
-            color='pais', 
-            title='Distribución de Profundidad por País',
-            labels={'profundidad': 'Profundidad (km)'}
-        )
-        st.plotly_chart(fig2, use_container_width=True)
+        # Histograma de magnitudes por país
+        for pais in df['pais'].unique():
+            ax1.hist(df[df['pais'] == pais]['magnitud'], bins=20, alpha=0.7, label=pais)
+        ax1.set_title('Distribución de Magnitudes por País')
+        ax1.set_xlabel('Magnitud')
+        ax1.set_ylabel('Frecuencia')
+        ax1.legend()
+        
+        # Boxplot de profundidad por país
+        df.boxplot(column='profundidad', by='pais', ax=ax2)
+        ax2.set_title('Distribución de Profundidad')
+        ax2.set_ylabel('Profundidad (km)')
+        ax2.set_xlabel('País')
+        plt.suptitle('')
+        
+        st.pyplot(fig)
     
     with tab2:
-        # Scatter plot de magnitud vs profundidad
-        fig = px.scatter(
-            df,
-            x='magnitud',
-            y='profundidad',
-            color='pais',
-            size='magnitud',
-            hover_name='lugar',
-            title='Relación entre Magnitud y Profundidad',
-            labels={'magnitud': 'Magnitud', 'profundidad': 'Profundidad (km)'},
-            trendline='lowess'
-        )
-        st.plotly_chart(fig, use_container_width=True)
+        fig, ax = plt.subplots(figsize=(10, 5))
+        colors = {'Perú': 'blue', 'Venezuela': 'orange'}
+        
+        for pais, group in df.groupby('pais'):
+            ax.scatter(group['magnitud'], group['profundidad'], 
+                      color=colors.get(pais, 'gray'), 
+                      label=pais,
+                      alpha=0.6)
+        
+        ax.set_title('Relación entre Magnitud y Profundidad')
+        ax.set_xlabel('Magnitud')
+        ax.set_ylabel('Profundidad (km)')
+        ax.legend()
+        st.pyplot(fig)
     
     with tab3:
-        # Serie temporal de sismos
+        fig, ax = plt.subplots(figsize=(12, 4))
         df['fecha_dia'] = df['fecha'].dt.date
-        daily_counts = df.groupby(['fecha_dia', 'pais']).size().reset_index(name='counts')
         
-        fig = px.line(
-            daily_counts,
-            x='fecha_dia',
-            y='counts',
-            color='pais',
-            title='Frecuencia Diaria de Sismos',
-            labels={'fecha_dia': 'Fecha', 'counts': 'Número de Sismos'},
-            markers=True
-        )
-        fig.update_xaxes(rangeslider_visible=True)
-        st.plotly_chart(fig, use_container_width=True)
+        for pais, group in df.groupby('pais'):
+            counts = group.groupby('fecha_dia').size()
+            ax.plot(counts.index, counts.values, label=pais, marker='o')
+        
+        ax.set_title('Frecuencia Diaria de Sismos')
+        ax.set_ylabel('Número de Sismos')
+        ax.set_xlabel('Fecha')
+        ax.legend()
+        plt.xticks(rotation=45)
+        st.pyplot(fig)
 
 # Sidebar mejorada
 with st.sidebar:
@@ -558,10 +505,7 @@ if df is not None and not df.empty:
         )
     
     with tab_graficos:
-        if PLOTLY_AVAILABLE:
-            crear_graficos_avanzados(df)
-        else:
-            crear_graficos_basicos(df)
+        crear_graficos_avanzados(df)
     
     with tab_datos:
         st.dataframe(
